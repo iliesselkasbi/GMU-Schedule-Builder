@@ -70,7 +70,9 @@ const scheduleService = new ScheduleService(USER_ID);
 const App: React.FC = () => {
   const [courses, setCourses] = useState<Course[]>(SAMPLE_COURSES);
   const [scheduledCourses, setScheduledCourses] = useState<ScheduledCourse[]>([]);
-  const [schedule, setSchedule] = useState<CourseSchedule | null>(null);
+  const [schedule, setSchedule] = useState<CourseSchedule | null>(
+    () => new CourseSchedule(USER_ID)
+  );
   const [loading, setLoading] = useState(true);
   const [conflict, setConflict] = useState<ScheduleConflict | null>(null);
   const [filters, setFilters] = useState<FilterState>({
@@ -83,26 +85,43 @@ const App: React.FC = () => {
     sortBy: 'Sort by',
   });
 
-  // Initialize schedule and load courses
+  // Initialize schedule and load courses (with fallback if Firestore is blocked)
   useEffect(() => {
+    let isMounted = true;
+
+    // Safety timer so UI never hangs if an adblocker blocks Firestore
+    const fallbackTimer = setTimeout(() => {
+      if (isMounted) setLoading(false);
+    }, 2000);
+
     const initializeApp = async () => {
       try {
-        // Load all courses
         const allCourses = await ScheduleService.loadAllCourses(SAMPLE_COURSES);
-        setCourses(allCourses);
+        if (isMounted && allCourses && allCourses.length > 0) {
+          setCourses(allCourses);
+        }
 
-        // Initialize user schedule
-        const userSchedule = await scheduleService.initializeSchedule(allCourses);
-        setSchedule(userSchedule);
-        setScheduledCourses(userSchedule.getCourses());
+        const userSchedule = await scheduleService.initializeSchedule(
+          allCourses && allCourses.length > 0 ? allCourses : SAMPLE_COURSES
+        );
+        if (isMounted) {
+          setSchedule(userSchedule);
+          setScheduledCourses(userSchedule.getCourses());
+        }
       } catch (error) {
-        console.error('Error initializing app:', error);
+        console.error('Error initializing app (using local fallback):', error);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
+        clearTimeout(fallbackTimer);
       }
     };
 
     initializeApp();
+
+    return () => {
+      isMounted = false;
+      clearTimeout(fallbackTimer);
+    };
   }, []);
 
   const addCourseToSchedule = async (course: Course) => {
@@ -111,10 +130,14 @@ const App: React.FC = () => {
     const result = schedule.addCourse(course);
 
     if (result.success) {
-      setScheduledCourses(schedule.getCourses());
+      setScheduledCourses([...schedule.getCourses()]);
       schedule.saveToLocalStorage();
-      await schedule.saveToFirestore();
       setConflict(null);
+      try {
+        await schedule.saveToFirestore();
+      } catch (e) {
+        console.warn('Saved locally; Firestore sync skipped:', e);
+      }
     } else {
       setConflict(result.conflict || null);
     }
@@ -124,16 +147,20 @@ const App: React.FC = () => {
     if (!schedule) return;
 
     schedule.removeCourse(courseId);
-    setScheduledCourses(schedule.getCourses());
+    setScheduledCourses([...schedule.getCourses()]);
     schedule.saveToLocalStorage();
-    await schedule.saveToFirestore();
     setConflict(null);
+    try {
+      await schedule.saveToFirestore();
+    } catch (e) {
+      console.warn('Removed locally; Firestore sync skipped:', e);
+    }
   };
 
   const totalCredits = schedule ? schedule.getTotalCredits() : 0;
 
   return (
-    <BrowserRouter basename="/GMU-Schedule-Builder/">
+    <BrowserRouter>
       <div className="app">
         <Header />
         {conflict && (
