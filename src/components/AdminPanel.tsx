@@ -21,7 +21,7 @@ const PRESET_COLORS = [
 ];
 
 const DAY_LABELS = ['M', 'T', 'W', 'Th', 'F'];
-const DAY_CODES  = ['M', 'T', 'W', 'R', 'F'];
+const DAY_CODES  = ['M', 'T', 'W', 'Th', 'F'];
 
 function buildSchedule(
   days: string[], sH: number, sM: number, sAp: 'AM'|'PM',
