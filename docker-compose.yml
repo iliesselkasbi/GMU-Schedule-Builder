@@ -1,0 +1,9 @@
+services:
+  gmu-schedule-builder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gmu-schedule-builder
+    ports:
+      - "8080:80"
+    restart: unless-stopped
